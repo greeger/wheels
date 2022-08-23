@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Fuck shit blin</title>
+</head>
+<body>
+    <h1>страница админа</h1>
+    <table>
+        <tr><td th:text="'id'"/><td th:text="'name'"/><td th:text="'email'"/></tr>
+        <th:block th:each="user :${allUsers}">
+            <tr>
+            <td th:text="${user.id}"/><td th:text="${user.name}"/><td th:text="${user.email}"/>
+            </tr>
+        </th:block>
+    </table>
+    <a href="/">на главную</a>
+</body>
+</html>

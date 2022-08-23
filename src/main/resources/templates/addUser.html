@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Fuck shit blin</title>
+</head>
+<body>
+    <h1>Форма для создания юзера</h1>
+    <form action="#" th:action="@{/addUser}" th:object="${user}" method="post">
+        <p>Name: <input type="text" th:field="*{name}" /></p>
+        <p>Email: <input type="text" th:field="*{email}" /></p>
+        <p><input type="submit" value="Submit" /> <input type="reset" value="Reset" /></p>
+    </form>
+</body>
+</html>
