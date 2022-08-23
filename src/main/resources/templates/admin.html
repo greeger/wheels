@@ -7,7 +7,7 @@
 <body>
     <h1>страница админа</h1>
     <table>
-        <tr><td th:text="'id'"/><td th:text="'name'"/><td th:text="'email'"/></tr>
+        <tr><td>id</td><td>name</td><td>email</td></tr>
         <th:block th:each="user :${allUsers}">
             <tr>
             <td th:text="${user.id}"/><td th:text="${user.name}"/><td th:text="${user.email}"/>
