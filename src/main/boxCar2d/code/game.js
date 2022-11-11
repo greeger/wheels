@@ -1,6 +1,5 @@
 /*
-	boxCar2d Game
-	Made using Box2d and Jquery on the Html5 Canvas element
+	boxCar2d ZPG
 	
 	Author : greeger
 	grigoriydeev.rar@gmail.com
@@ -26,15 +25,21 @@ function start_game() {
 function game() {
 	this.fps = 60;
 	
-	//wntf is that
-	this.scale = 50;
+	this.scale = 100;
+	this.camera = new b2Vec2();
+	
+	this.minPos = new b2Vec2(1.5, 1.4);
+	this.maxPos = new b2Vec2(2.5, 2.7);
 	
 	//global array of all objects to manage
 	this.game_objects = [];
 	
-	this.points = 0;
 	this.to_destroy = [];
 	this.time_elapsed = 0;
+	
+	this.currDist = 0;
+	this.currTime = 0;
+	this.currIdle = 0;
 }
 
 game.prototype.resize = function() {
@@ -53,12 +58,36 @@ game.prototype.resize = function() {
 	this.canvas_width = canvas.attr('width');
 	this.canvas_height = canvas.attr('height');
 	
-	this.screen_height = 10;
+	this.screen_height = 4;
 	this.scale = this.canvas_height / this.screen_height;
 	this.screen_width = this.canvas_width / this.scale;
 }
 
 game.prototype.setup = function() {
+	for(let i = 0; i < this.game_objects.length; i++)
+		this.destroy_object(this.game_objects[i]);
+	this.perform_destroy();
+	this.game_objects = [];
+	
+	//track
+	let currX = 0;
+	let currY = 1;
+	for(let i = 0; i < 100; i++) {
+		newY = currY + (this.map[i] - 0.5) * i / 50;
+		newX = currX + 1;
+		let arr = [new b2Vec2(0, 0), new b2Vec2(-0.1, -0.1),
+			new b2Vec2(newX - currX -0.1, newY - currY - 0.1), new b2Vec2(newX - currX, newY - currY)];
+		this.game_objects.push(new track({x : currX, y : currY, arr : arr, game : this}));
+		currX = newX;
+		currY = newY;
+	}
+	this.game_objects.push(new car({x : 3, y : 2.2, genome : this.genomes[this.currCar], game : this}));
+	
+	this.tick();
+}
+
+//Start the game
+game.prototype.start = function() {
 	this.ctx = ctx = $('#canvas').get(0).getContext('2d');
 	let canvas = $('#canvas');
 	this.canvas = canvas;
@@ -73,55 +102,87 @@ game.prototype.setup = function() {
 	//create the box2d world
 	this.create_box2d_world();
 	
-	//platform
-	let currX = 0;
-	let currY = 1;
-	for(let i = 0; i < 100; i++) {
-		newY = currY + (Math.random() - 0.5) * i / 50;
-		newX = currX + 1;
-		this.game_objects.push(new platform({x : currX , y : currY, width : 1, height : 0.1, game : this}));
-		currX = newX;
-		currY = newY;
+	//this.start_handling();
+	//this.setup_collision_handler();
+	
+	this.map = [];
+	for(let i = 0; i < 100; i++)
+		this.map.push(Math.random());
+	
+	this.genomes = [];
+	for(let i = 0; i < 10; i++)
+		this.genomes.push(randGenome());
+	
+	this.currCar = 0;
+	this.generation = 0;
+	
+	this.parents = [];
+	for(let i = 0; i < 10; i++)
+		this.parents.push(-1);
+	this.numbers = [];
+	for(let i = 0; i < 10; i++)
+		this.numbers.push(i);
+	
+	this.times = [];
+	this.distances = [];
+	
+	this.is_paused = false;
+	this.on = true;
+	this.setup();
+}
+
+game.prototype.endRun = function() {
+	this.distances.push(this.currDist);
+	this.times.push(this.currTime);
+	this.currDist = 0;
+	this.currTime = 0;
+	this.currIdle = 0;
+	this.on = false;
+	
+	if(this.currCar == 9){
+		this.map = [];
+		for(let i = 0; i < 100; i++)
+			this.map.push(Math.random());
+		this.currCar = 0;
+		
+		let order = getOrder(this.distances, this.times);
+		
+		let newParents = [];
+		for(let i = 0; i < 9; i++)
+			newParents.push(this.parents[order[i]]>=0?this.parents[order[i]]:this.numbers[order[i]]);
+		newParents.push(-1);
+		
+		let newNumbers = [];
+		for(let i = 0; i < 9; i++)
+			newNumbers.push(this.parents[order[i]]>=0?this.numbers[order[i]]+1:0);
+		newNumbers.push(this.generation + 9);
+		
+		let newGenomes = [];
+		for(let i = 0; i < 9; i++)
+			newGenomes.push(mutate(this.genomes[order[i]]));
+		newGenomes.push(randGenome());
+		
+		this.genomes = newGenomes;
+		this.parents = newParents;
+		this.numbers = newNumbers;
+		this.times = [];
+		this.distances = [];
+		this.generation++;
 	}
-	
-	this.game_objects.push(new platform2({game : this}));
-	
-	//the player
-	this.player = new player({x : w/2, y: h/2 , game : this});
-	this.game_objects.push(this.player);
-	
-	//attach event handlers for key presses
-	this.start_handling();
-	
-	//setup collision handler too
-	this.setup_collision_handler();
+	else
+		this.currCar++;
+	this.setup();
 }
 
 game.prototype.create_box2d_world = function() {
-	//10m/s2 downwards, cartesian coordinates remember - we shall keep slightly lesser gravity
-	let gravity = new b2Vec2(0, -10);
+	//5m/s2 downwards, cartesian coordinates
+	let gravity = new b2Vec2(0, -5);
 	
-	/*
-		very important to do this, otherwise player will not move.
-		basically dynamic bodies trying to slide over static bodies will go to sleep
-	*/
 	let doSleep = false;
 	let world = new b2World(gravity , doSleep);
 	
 	//save in global object
 	this.box2d_world = world;
-}
-
-//Start the game :) Setup and start ticking the clock
-game.prototype.start = function() {
-	this.on = true;
-	this.total_points = 0;
-	
-	this.setup();
-	this.is_paused = false;
-	
-	//Start the Game Loop - TICK TOCK TICK TOCK TICK TOCK TICK TOCK
-	this.tick();
 }
 
 game.prototype.redraw_world = function() {
@@ -132,58 +193,59 @@ game.prototype.redraw_world = function() {
 	let w = this.screen_width;
 	let h = this.screen_height;
 	
-	//let img = img_res('background.png');
-	//this.ctx.drawImage(img, 0 , 0 , this.canvas_width, this.canvas_height);
+	let absScale = Math.min(this.canvas_width/1080, this.canvas_height/720);
+	let font = /*'bold '*/ + 15*absScale + 'px arial';
+	let time = this.currTime + (this.currTime%2==0?'0':'');
+	write_text({x : this.canvas_width - 100*absScale , y : 25*absScale , font : font , color : '#000'
+		, text : 'Car' + (this.parents[this.currCar]>=0?this.parents[this.currCar]+'_':'') + this.numbers[this.currCar] + (this.parents[this.currCar]>=0?'_'+this.currCar:''), ctx : this.ctx});
+	write_text({x : this.canvas_width - 100*absScale , y : 45*absScale , font : font , color : (this.currIdle>50?'#f00':(this.currDist>=50?'#0b0':'#000'))
+		, text : this.currDist.toFixed(1) + ' m', ctx : this.ctx});
+	write_text({x : this.canvas_width - 100*absScale , y : 65*absScale , font : font , color : (this.currTime>50?'#f00':'#000')
+		, text : (this.currTime).toFixed(1) + ' s', ctx : this.ctx});
 	
-	write_text({x : 25 , y : 25 , font : 'bold 15px arial' , color : '#000'
-		, text : 'h: ' + this.canvas_height + ' w: ' + this.canvas_width + ' points: ' + this.points , ctx : this.ctx})
+	write_text({x : 20*absScale , y : 25*absScale , font : font , color : '#000'
+		, text : 'Generation ' + this.generation, ctx : this.ctx});
+	for(let i = 0; i < this.currCar; i++){
+		write_text({x : 20*absScale , y : (45+20*i)*absScale , font : font , color : '#000'
+			, text : 'Car' + (this.parents[i]>=0?this.parents[i]+'_':'') + this.numbers[i] + (this.parents[i]>=0?'_'+i:'') + ': ' + (this.distances[i]).toFixed(1) + ' m, ' + (this.times[i]).toFixed(1) + ' s', ctx : this.ctx});
+	}
 	
-	//Draw each object one by one , the tiles , the cars , the other objects lying here and there
+	//Draw each object one by one
 	for(let i in this.game_objects) {
 		this.game_objects[i].draw();
 	}
 }
 
-game.prototype.tick = function(cnt) {
-	if(!this.is_paused && this.on) {
-		this.time_elapsed += 1;
-		
-		//create a random fruit on top
-		if(this.time_elapsed % 50 == 0) {
-			let xc = Math.random() * 8 + this.screen_width/2 - 4;
-			let yc = this.screen_height/2 + 2.5;
-			
-			this.game_objects.push(new apple({x : xc ,y : yc,game:this}));
-		}
-		
-		//tick all objects, if dead then remove
-		for(let i in this.game_objects) {
-			if(this.game_objects[i].dead == true) {
-				delete this.game_objects[i];
-				continue;
-			}
-			
+game.prototype.tick = function() {
+	
+	this.time_elapsed += 1;
+	
+	//tick all objects, if dead then remove
+	for(let i in this.game_objects) {
+		if(this.game_objects[i].dead == true)
+			delete this.game_objects[i];
+		else
 			this.game_objects[i].tick();
-		}
-		
-		//garbage collect dead things
-		this.perform_destroy();
-		
-		//Step the box2d engine ahead
-		this.box2d_world.Step(1/20 , 8 , 3);
-		
-		//important to clear forces, otherwise forces will keep applying
-		this.box2d_world.ClearForces();
-		
-		//redraw the world
-		this.redraw_world();
-		
-		if(!this.is_paused && this.on) {
-			let that = this;
-			//game.fps times in 1000 milliseconds or 1 second
-			this.timer = setTimeout(function() {that.tick();}  , 1000/this.fps);
-		}
 	}
+	
+	//garbage collect dead things
+	this.perform_destroy();
+	
+	//Step the box2d engine ahead
+	this.box2d_world.Step(1/20 , 8 , 3);
+	
+	//important to clear forces, otherwise forces will keep applying
+	this.box2d_world.ClearForces();
+	
+	//redraw the world
+	this.redraw_world();
+	
+	if(!this.is_paused && this.on) {
+		//game.fps times in 1000 milliseconds or 1 second
+		this.timer = setTimeout(() =>  {this.tick();} , 1000/this.fps);
+	}
+	else
+		this.on = true;
 }
 
 game.prototype.perform_destroy = function() {
@@ -193,342 +255,287 @@ game.prototype.perform_destroy = function() {
 }
 
 game.prototype.get_offset = function(vector) {
-	return new b2Vec2(vector.x - 0, Math.abs(vector.y - this.screen_height));
+	return new b2Vec2(vector.x - this.camera.x, -(vector.y - this.screen_height - this.camera.y));
 }
 
-game.prototype.start_handling = function() {
+/*game.prototype.start_handling = function() {
 	let that = this;
-	
 	$(document).on('keydown.game' , function(e) {
 		that.key_down(e);
 		return false;
 	});
-	
 	$(document).on('keyup.game' ,function(e) {
 		that.key_up(e);
 		return false;
 	});
 }
-
 game.prototype.key_down = function(e) {
 	let code = e.keyCode;
-	
 	//LEFT
 	if(code == 37) {
 		this.player.do_move_left = true;
-	}
-	//UP
-	else if(code == 38) {
-		this.player.jump();
-	}
-	//RIGHT
-	else if(code == 39) {
-		this.player.do_move_right = true;
-	}
-}
-
-game.prototype.key_up = function(e) {
-	let code = e.keyCode;
-	
-	//UP KEY
-	if(code == 38) {
-		this.player.do_move_up = false;
-		this.player.can_move_up = true;
-	}
-	//LEFT
-	else if(code == 37) {
-		this.player.do_move_left = false;
-	}
-	//RIGHT
-	else if(code == 39) {
-		this.player.do_move_right = false;
 	}
 }
 
 //Setup collision handler
 game.prototype.setup_collision_handler = function() {
 	let that = this;
-	
 	//Override a few functions of class b2ContactListener
 	b2ContactListener.prototype.BeginContact = function (contact) {
 		//now come action time
 		let a = contact.GetFixtureA().GetUserData();
 		let b = contact.GetFixtureB().GetUserData();
-		
 		if(a instanceof player && b instanceof apple) {
 			that.destroy_object(b);
 			that.points++;
 		}
-		
-		else if(b instanceof player && a instanceof apple) {
-			that.destroy_object(a);
-			that.points++;
-		}
-		//apple hits a wall
-		else if(a instanceof apple && b instanceof platform) {
-			that.destroy_object(a);
-		}
 	}
-}
+}*/
 
 //schedule an object for destruction in next tick
 game.prototype.destroy_object = function(obj) {
 	this.to_destroy.push(obj);
 }
 
-//Apple object
-function apple(options) {
-	this.height = 0.25;
-	this.width = 0.25;
+function randGenome() {
+	let rez = [];
+	for(let i = 0; i < 8*4; i++)
+		rez.push(Math.random());
+	return rez;
+}
+
+function mutate(genome) {
+	let newGenome = [];
+	for(let i = 0; i < genome.length; i++)
+		newGenome.push(genome[i]);
+	for(let i = 0; i < 1; i++)
+		newGenome[parseInt(Math.random()*4*8)] = Math.random();
+	for(let i = 0; i < 5; i++){
+		let rand = Math.random()*0.2;
+		let index = parseInt(Math.random()*4*8);
+		if(Math.random() > 0.5){
+			if(newGenome[index] - rand < 0)
+				newGenome[index] += rand;
+			else
+				newGenome[index] -= rand;
+		}
+		else{
+			if(newGenome[index] + rand >= 1)
+				newGenome[index] -= rand;
+			else
+				newGenome[index] += rand;
+		}
+	}
+	return newGenome;
+}
+
+function getOrder(distances, times){
+	let order = [];
+	for(let i = 0; i < 10; i++)
+		order.push(i);
+	for(let i = 1; i < 10; i++){
+		let done = true;
+		for(let j = 0; j < 10 - i; j++){
+			if(distances[order[j]] >= distances[order[j+1]] + 0.1 || (Math.abs(distances[order[j]] - distances[order[j+1]]) < 0.1 && times[order[j]] < times[order[j+1]])){
+				let temp = order[j];
+				order[j] = order[j+1];
+				order[j+1] = temp;
+				done = false;
+			}
+		}
+		if(done)
+			break;
+	}
+	let rez = [];
+	rez.push(order[9]);
+	rez.push(order[9]);
+	rez.push(order[8]);
+	rez.push(order[8]);
+	rez.push(order[7]);
+	rez.push(order[7]);
+	rez.push(order[6]);
+	rez.push(order[5]);
+	rez.push(order[4]);
+	return rez;
+}
+
+//track object
+function track(options) {
 	this.x = options.x;
 	this.y = options.y;
+	this.arr = options.arr;
 	
 	this.game = options.game;
+	this.age = 0;
 	
-	let linear_damping = 10 - (parseInt(this.game.points / 10) + 1)*0.5;
+	let bodyDef = new b2BodyDef();
 	
-	let info = { 
-		'density' : 10 ,
-		'linearDamping' : linear_damping ,
-		'fixedRotation' : true ,
-		'userData' : this ,
-		'type' : b2Body.b2_dynamicBody ,
-	};
+	let fixDef = new b2FixtureDef();
 	
-	let body = create_box(this.game.box2d_world , this.x, this.y, this.width, this.height, info);
+	fixDef.shape = new b2PolygonShape;
+	
+	fixDef.density = 3;
+	fixDef.friction = 0.8;
+	fixDef.restitution = 0.1;
+	fixDef.shape.SetAsArray(this.arr, this.arr.length);
+	
+	//set the position of the center
+	bodyDef.position.Set(this.x, this.y);
+	
+	let body = this.game.box2d_world.CreateBody(bodyDef);
+	body.CreateFixture(fixDef);
 	this.body = body;
 }
 
-//apple.img = img_res('apple.png');
-
-apple.prototype.draw = function() {
-	if(this.body == null) {
-		return false;
-	}
-	draw_body(this.body, this.game.ctx);
-	/*
-	let c = this.game.get_offset(this.body.GetPosition());
-	
-	let scale = this.game.scale;
-	
-	let sx = c.x * scale;
-	let sy = c.y * scale;
-	
-	let width = this.width * scale;
-	let height = this.height * scale;
-	
-	this.game.ctx.translate(sx, sy);
-	this.game.ctx.drawImage(apple.img , -width / 2, -height / 2, width, height);
-	this.game.ctx.translate(-sx, -sy);*/
-}
-
-apple.prototype.tick = function() {
+track.prototype.tick = function() {
 	this.age++;
-	
-	//destroy the apple if it falls below the x axis
-	if(this.body.GetPosition().y < 0) {
-		this.game.destroy_object(this);
-	}
 }
 
-//Destroy the apple when player eats it
-apple.prototype.destroy = function() {
-	if(this.body == null) {
+//Draw track
+track.prototype.draw = function() {
+	draw_body(this.body, this.game.ctx);
+}
+
+track.prototype.destroy = function()
+{
+	if(this.body == null)
 		return;
-	}
-	this.body.GetWorld().DestroyBody(this.body );
+	this.body.GetWorld().DestroyBody( this.body );
 	this.body = null;
 	this.dead = true;
 }
 
-/*
-	Player object
-	monkey art from
-	http://www.vickiwenderlich.com/2011/06/game-art-pack-monkey-platformer/
-*/
-function player(options) {
-	this.height = 1.0;
-	this.width = 0.66;
-	
-	this.x = options.x;
-	this.y = options.y;
-	this.game = options.game;
-	this.age = 0;
-		
-	this.do_move_left = false;
-	this.do_move_right = false;
-	this.max_hor_vel = 2;
-	this,max_ver_vel = 4;
-	this.can_move_up = true;
-	
-	let info = { 
-		'density' : 10 ,
-		'fixedRotation' : true ,
-		'userData' : this ,
-		'type' : b2Body.b2_dynamicBody ,
-		'restitution' : 0.0 ,
-	};
-	
-	let body = create_box(this.game.box2d_world , this.x, this.y, this.width, this.height, info);
-	this.body = body;
-}
-
-player.prototype.tick = function() {
-	if(this.is_out()) {
-		//turn off the game
-		this.game.on = false;
-		
-		start_game();
-	}
-	
-	if(this.do_move_left) {
-		this.add_velocity(new b2Vec2(-1,0));
-	}
-	
-	if(this.do_move_right) {
-		this.add_velocity(new b2Vec2(1,0));
-	}
-	
-	if(this.do_move_up && this.can_move_up) {
-		
-		this.add_velocity(new b2Vec2(0,6));
-		this.can_move_up = false;
-	}
-	
-	this.age++;
-}
-
-player.prototype.add_velocity = function(vel) {
-	let b = this.body;
-	let v = b.GetLinearVelocity();
-	
-	v.Add(vel);
-	
-	//check for max horizontal and vertical velocities and then set
-	if(Math.abs(v.y) > this.max_ver_vel) {
-		v.y = this.max_ver_vel * v.y/Math.abs(v.y);
-	}
-	
-	if(Math.abs(v.x) > this.max_hor_vel) {
-		v.x = this.max_hor_vel * v.x/Math.abs(v.x);
-	}
-	
-	//set the new velocity
-	b.SetLinearVelocity(v);
-}
-
-//player.img = img_res('monkey.png');
-
-player.prototype.draw = function() {
-	if(this.body == null) {
-		return false;
-	}
-	draw_body(this.body, this.game.ctx);
-	
-	/*let c = this.game.get_offset(this.body.GetPosition());
-	
-	let scale = this.game.scale;
-	
-	let sx = c.x * scale;
-	let sy = c.y * scale;
-	
-	let width = this.width * scale;
-	let height = this.height * scale;
-	
-	this.game.ctx.translate(sx, sy);
-	this.game.ctx.drawImage(player.img , -width / 2, -height / 2, width, height);
-	this.game.ctx.translate(-sx, -sy);*/
-}
-
-player.prototype.jump = function() {
-	//if player is already in vertical motion, then cannot jump
-	if(Math.abs(this.body.GetLinearVelocity().y) > 0.0) {
-		return false;
-	}
-	this.do_move_up = true;
-}
-
-player.prototype.is_out = function() {
-	//if player has fallen below the 0 level of y axis in the box2d coordinates, then he is out
-	if(this.body.GetPosition().y < 0) {
-		return true;
-	}
-	
-	return false;
-}
-
-//platform object
-function platform(options) {
+//car object
+function car(options) {
 	this.x = options.x;
 	this.y = options.y;
 	
-	this.height = options.height;
-	this.width = options.width;
-	
-	this.game = options.game;
-	this.age = 0;
-	//create a box2d static object - one that does not move, but does collide with dynamic objects
-	
-	let info = {
-		'density' : 10 ,
-		'fixedRotation' : true ,
-		'userData' : this ,
-		'type' : b2Body.b2_staticBody ,
-	};
-	//let body = create_polygon(this.game.box2d_world, )
-	let body = create_box(this.game.box2d_world , this.x, this.y, this.width, this.height, info);
-	body.SetAngle(0.25);
-	this.body = body;
-}
-
-//platform.img = img_res('platform.png');
-platform.prototype.tick = function() {
-	this.age++;
-}
-
-//Draw bricks
-platform.prototype.draw = function() {
-	draw_body(this.body, this.game.ctx);
-}
-
-//platform2 object
-function platform2(options) {
-	this.x = 3;
-	this.y = 3;
-	
-	this.height = 1;
-	this.width = 2;
-	
 	this.game = options.game;
 	this.age = 0;
 	
-	var bodyDef = new b2BodyDef();
+	this.genome = options.genome;
 	
-	var fixDef = new b2FixtureDef();
-	fixDef.density = 10;
-	fixDef.friction = 1.0;
-	fixDef.restitution = 0.5;
+	let bodyDef = new b2BodyDef();
+	bodyDef.type = b2Body.b2_dynamicBody;
+	bodyDef.fixedRotation = false;
+	
+	//set the position of the center
+	bodyDef.position.Set(this.x, this.y);
+	
+	let fixDef = new b2FixtureDef();
+	fixDef.density = 4;
+	fixDef.friction = 0.8;
+	fixDef.restitution = 0.1;
 	
 	fixDef.shape = new b2PolygonShape;
 	
-	//mention half the sizes
-	fixDef.shape.SetAsBox(1, 0.5);
-	
-	//set the position of the center
-	bodyDef.position.Set(3 , 3);
+	this.angles = [];
+	this.magnitudes = [];
+	this.isWheels = [];
+	this.radiuses = [];
+	let angle = 0;
+	for(let i = 0; i < 8; i++){
+		angle += Math.PI/8 + this.genome[i]*Math.PI/8;
+		this.angles.push(angle);
+		this.magnitudes.push(0.1 + this.genome[i + 8] * 0.9)
+		this.isWheels.push(this.genome[i + 16] > 0.2?false:true);
+		this.radiuses.push(0.1 + this.genome[i + 24] * 0.15);
+	}
 	
 	let body = this.game.box2d_world.CreateBody(bodyDef);
-	body.CreateFixture(fixDef);
-	body.SetAngle(-0.25);
-	this.body = body;
+	
+	for(let i = 0; i < 8; i++){
+		let arr = [new b2Vec2(0, 0),
+			new b2Vec2(this.magnitudes[i]*Math.cos(this.angles[i]), this.magnitudes[i]*Math.sin(this.angles[i])),
+			new b2Vec2(this.magnitudes[(i+1)%8]*Math.cos(this.angles[(i+1)%8]), this.magnitudes[(i+1)%8]*Math.sin(this.angles[(i+1)%8]))];
+		
+		fixDef.shape.SetAsArray(arr, 3);
+		fixDef.filter.groupIndex = -1;
+		body.CreateFixture(fixDef);
+	}
+	let bodies = [];
+	bodies.push(body);
+	
+	//wheels
+	let wFixDef = new b2FixtureDef();
+	wFixDef.shape = new b2CircleShape;
+	wFixDef.density = 4;
+	wFixDef.friction = 0.8;
+	wFixDef.restitution = 0.5;
+	wFixDef.filter.groupIndex = -1;
+	
+	for(let i = 0; i < 8; i++){
+		if(this.isWheels[i]){
+			let wBodyDef = new b2BodyDef();
+			wBodyDef.type = b2Body.b2_dynamicBody;
+			wBodyDef.fixedRotation = false;
+			wBodyDef.allowSleep = false;
+			wBodyDef.position.Set(this.x + this.magnitudes[i]*Math.cos(this.angles[i]), 
+				this.y + this.magnitudes[i]*Math.sin(this.angles[i]));
+			
+			wFixDef.shape.SetRadius(this.radiuses[i]);
+			
+			let wBody = this.game.box2d_world.CreateBody(wBodyDef);
+			wBody.CreateFixture(wFixDef);
+			
+			let revoluteJointDef = new b2RevoluteJointDef();
+			revoluteJointDef.enableMotor = true;
+			revoluteJointDef.Initialize(body, wBody, wBodyDef.position);
+			let motor = this.game.box2d_world.CreateJoint(revoluteJointDef);
+			motor.SetMotorSpeed(-0.33*Math.PI / (this.radiuses[i] + 0.0));
+			motor.SetMaxMotorTorque(2);
+			bodies.push(wBody);
+		}
+	}
+	this.bodies = bodies;
 }
 
-//platform.img = img_res('platform.png');
-platform2.prototype.tick = function() {
+car.prototype.tick = function() {
+	if(!this.game.on) return;
 	this.age++;
+	
+	let currX = this.bodies[0].GetPosition().x - this.game.camera.x;
+	let currY = this.bodies[0].GetPosition().y - this.game.camera.y;
+	if(currX < this.game.minPos.x)
+		this.game.camera.x += currX - this.game.minPos.x;
+	if(currX > this.game.maxPos.x)
+		this.game.camera.x += currX - this.game.maxPos.x;
+	if(currY < this.game.minPos.y)
+		this.game.camera.y += currY - this.game.minPos.y;
+	if(currY > this.game.maxPos.y)
+		this.game.camera.y += currY - this.game.maxPos.y;
+	
+	this.game.currTime = this.age/20;
+	if(this.game.currTime > 60)
+	{
+		this.game.endRun();
+		return;
+	}
+	currX = this.bodies[0].GetPosition().x - 3;
+	if(currX > this.game.currDist){
+		this.game.currDist = currX;
+		this.game.currIdle = 0;
+		if(currX >= 60){
+			this.game.endRun();
+		}
+	}
+	else{
+		this.game.currIdle++;
+		if(this.game.currIdle >= 150)
+			this.game.endRun();
+	}
 }
 
-//Draw bricks
-platform2.prototype.draw = function() {
-	draw_body(this.body, this.game.ctx);
+//Draw car
+car.prototype.draw = function() {
+	draw_car(this.bodies, this.game.ctx);
+}
+
+car.prototype.destroy = function()
+{
+	if(this.bodies.length == 0)
+		return;
+	for(let i = 0; i < this.bodies.length; i++)
+		this.bodies[i].GetWorld().DestroyBody( this.bodies[i] );
+	this.dead = true;
 }

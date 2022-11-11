@@ -3,7 +3,7 @@
 	2. Code for class inheritance
 */
 
-var b2Vec2 = Box2D.Common.Math.b2Vec2
+let b2Vec2 = Box2D.Common.Math.b2Vec2
 	, b2AABB = Box2D.Collision.b2AABB
 	, b2BodyDef = Box2D.Dynamics.b2BodyDef
 	, b2Body = Box2D.Dynamics.b2Body
@@ -35,11 +35,9 @@ b2Settings.b2_maxRotation = 50.0;
 /*
 	Load image from asset manager
 */
-function img_res(path)
-{
-	var i = new Image();
+function img_res(path) {
+	let i = new Image();
 	i.src = 'code/media/'+path;
-	
 	return i;
 }
 
@@ -49,19 +47,17 @@ function img_res(path)
 	
 	write_text({x : game.canvas_width - 100 , y : game.canvas_height - 50 , font : 'bold 35px arial' , color : '#fff' , text : time , ctx : game.ctx})
 */
-function write_text(options)
-{
-	var x = options.x;
-	var y = options.y;
-	var font = options.font;
-	var color = options.color;
-	var text = options.text;
-	var ctx = options.ctx;
+function write_text(options) {
+	let x = options.x;
+	let y = options.y;
+	let font = options.font;
+	let color = options.color;
+	let text = options.text;
+	let ctx = options.ctx;
 	
 	ctx.save();
 	
-	if('shadow' in options)
-	{
+	if('shadow' in options) {
 		ctx.shadowColor = options.shadow.color;
 		ctx.shadowOffsetX = options.shadow.x;
 		ctx.shadowOffsetY = options.shadow.y;
@@ -72,12 +68,9 @@ function write_text(options)
 	/*ctx.textAlign = 'center';*/
 	ctx.fillStyle = color;
 	
-	if('align' in options)
-	{
+	if('align' in options) {
 		ctx.textAlign = options.align;
 	}
-	
 	ctx.fillText( text , x , y);
-	
 	ctx.restore();
 }

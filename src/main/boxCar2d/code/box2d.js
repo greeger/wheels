@@ -2,87 +2,38 @@
 	box2d docs at
 	http://www.box2dflash.org/docs/2.1a/reference/
 */
-function create_box(world, x, y, width, height, options) 
-{
-	//default setting
-	options = $.extend(true, {
-		'density' : 1.0 ,
-		'friction' : 1.0 ,
-		'restitution' : 0.0 ,
-		
-		'linearDamping' : 0.0 ,
-		'angularDamping' : 0.0 ,
-		
-		'gravityScale' : 1.0 ,
-		'type' : b2Body.b2_dynamicBody , 
-		
-		'fixedRotation' : false ,
-	}, options);
-	
-	var body_def = new b2BodyDef();
-	var fix_def = new b2FixtureDef;
-	
-	fix_def.density = options.density;
-	fix_def.friction = options.friction;
-	fix_def.restitution = options.restitution;
-	
-	fix_def.shape = new b2PolygonShape();
-	
-	//user specific data
-	fix_def.userData = options.userData;
-	
-	//important! this takes half the width
-	fix_def.shape.SetAsBox( width /2 , height /2 );
-	
-	body_def.position.Set(x , y);
-	body_def.linearDamping = options.linearDamping;
-	body_def.angularDamping = options.angularDamping;
-	
-	body_def.type = options.type;
-	body_def.fixedRotation = options.fixedRotation;
-	
-	var b = world.CreateBody( body_def );
-	var f = b.CreateFixture(fix_def);
-	
-	return b;
-}
 
 //Generic function to draw a box2d body , with a given shape on a given context
-function draw_shape(body , shape, context) 
-{
-	context.strokeStyle = '#000';
+function draw_shape(body , shape, color1, color2, context) {
+	context.strokeStyle = color1;
 	context.lineWidth = 1;
-	var scale = global_game.scale;
+	let scale = global_game.scale;
 	
-	context.fillStyle = "#ccc";
+	context.fillStyle = color2;
 	
 	context.beginPath();
-	switch (shape.GetType()) 
-	{
+	switch (shape.GetType()) {
 		//A polygon type shape like a square , rectangle etc
-		case b2Shape.e_polygonShape:
-		{
-			var vert = shape.GetVertices();
-			var position = body.GetPosition();
-			//b2Math.MulMV(b.m_xf.R , vert[0]);
+		case b2Shape.e_polygonShape: {
+			let vert = shape.GetVertices();
+			let position = body.GetPosition();
 			
-			var tV = position.Copy();
-			var a = vert[0].Copy();
+			let tV = position.Copy();
+			let a = vert[0].Copy();
 			a.MulM( body.GetTransform().R );
 			
 			tV.Add(a);
 			
-			var _v = global_game.get_offset(tV);
+			let _v = global_game.get_offset(tV);
 			
-			var _x = _v.x;
-			var _y = _v.y;
+			let _x = _v.x;
+			let _y = _v.y;
 			
 			context.moveTo(_x * scale, _y * scale);
 			
-			for (var i = 0; i < vert.length; i++) 
-			{
+			for (let i = 0; i < vert.length; i++) {
 				//Get a copy of the vertice
-				var v = vert[i].Copy();
+				let v = vert[i].Copy();
 				
 				//Rotate the vertice
 				v.MulM( body.GetTransform().R );
@@ -90,34 +41,67 @@ function draw_shape(body , shape, context)
 				v.Add(position);
 				
 				//Subtract the camera coordinates to get relative offsets
-				var _v = global_game.get_offset(v);
+				let _v = global_game.get_offset(v);
 				
-				var _x1 = _v.x;
-				var _y1 = _v.y;
+				let _x1 = _v.x;
+				let _y1 = _v.y;
 
 				//Draw line to the new point
 				context.lineTo( _x1 * scale , _y1  * scale);
 			}
 			context.lineTo(_x * scale, _y * scale);
+			break;
 		}
-		break;
+		//A circle type shape
+		case b2Shape.e_circleShape: {
+			let r = shape.GetRadius();
+			let position = body.GetPosition();
+			
+			let tV = position.Copy();
+			let a = shape.GetLocalPosition().Copy();
+			a.MulM( body.GetTransform().R );
+			tV.Add(a);
+			
+			let _v = global_game.get_offset(tV);
+			
+			let _x = _v.x;
+			let _y = _v.y;
+			context.ellipse(_x * scale, _y * scale, r * scale, r * scale, 0, 0, 2 * Math.PI);
+			for(let i = 0; i < 2; i++){
+				context.moveTo(_x * scale, _y * scale);
+				let angle = Math.PI * i - body.GetAngle();
+				context.lineTo(_x * scale + r * scale * Math.cos(angle), _y * scale + r * scale * Math.sin(angle));
+			}
+			break;
+		}
 	}
-	
 	context.fill();
 	context.stroke();
+	
 }
 
 //Draw a body by drawing all the shapes of its fixtures
-function draw_body(b, context)
-{
-	var c_x = b.GetWorldCenter().x;
-	var c_y = b.GetWorldCenter().y;
-	
-	for( var f = b.GetFixtureList() ; f != null ; f = f.GetNext())
-	{
-		var shape = f.GetShape();
-		
+function draw_body(b, context) {	
+	for( let f = b.GetFixtureList() ; f != null ; f = f.GetNext()) {
+		let shape = f.GetShape();
 		//draw the shape finally
-		draw_shape(b , shape , context);
+		draw_shape(b , shape, "rgb(100, 100, 100, 100%)", "rgb(200, 200, 200, 100%)", context);
+	}
+}
+
+//Draw a body by drawing all the shapes of its fixtures
+function draw_car(b, context) {
+	for( let f = b[0].GetFixtureList() ; f != null ; f = f.GetNext()) {
+		let shape = f.GetShape();
+		//draw the shape finally
+		draw_shape(b[0] , shape, "rgb(100, 100, 100, 100%)", "rgb(150, 250, 150, 100%)", context);
+		
+	}
+	for(let i = 1; i < b.length; i++) {
+		for( let f = b[i].GetFixtureList() ; f != null ; f = f.GetNext()) {
+			let shape = f.GetShape();
+			//draw the shape finally
+			draw_shape(b[i] , shape, "rgb(100, 100, 100, 100%)", "rgb(150, 150, 250, 50%)", context);
+		}
 	}
 }
